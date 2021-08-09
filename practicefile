@@ -1,0 +1,769 @@
+/* Formatted on 11-Mar-19 6:59:19 PM (QP5 v5.149.1003.31008) */
+CREATE OR REPLACE FUNCTION CUSTOM.FUNC_RPT_LN_0103 (
+   P_SOLID         IN VARCHAR2,
+   P_CIFID         IN VARCHAR2,
+   P_REPORTMONTH   IN VARCHAR2,
+   P_TYPE          IN VARCHAR2,
+   P_CRELICON      IN VARCHAR2,
+   P_DISBID        IN VARCHAR2)
+   RETURN custom.RPT_LN_0103_TABLE
+   PIPELINED
+AS 
+   -------------------------------------------------------------------------------------------------------------------------------
+   -- Version No        Date                  Author               Change
+   --- V1.0           25 Jan 2019     Mahendar Kumar     734223
+   --- V2.0           27 Feb 2019     Mahendar Kumar     Added new custom table C_LOP21_HPAYOFF
+   --- V3.0           06 Mar 2019     Mahendar Kumar     Changes in Principal demand fetch
+   --- V4.0           07 Mar 2019     Mahendar Kumar     Changes in Principal Amount  fetch for bullet type loans
+   --- V5.0           15 Mar 2019     Mahendar Kumar     Error Handling  
+   -------------------------------------------------------------------------------------------------------------------------------
+   -------------------------------------------------------------------------
+   -- Cursor 1 : LOP 21 MAIN CURSOR - Get All eligible accounts
+   ------------------------------------------------------------------------
+   CURSOR LOP_21_MAIN_CUR (
+      V_SOLID       VARCHAR2,
+      V_CIFID       VARCHAR2,
+      LV_FR_DATE    VARCHAR2,
+      LV_TO_DATE    VARCHAR2,
+      V_TYPE        VARCHAR2,
+      V_CRELICON    VARCHAR2,
+      V_DISBID      VARCHAR2,
+      V_PREFIX      VARCHAR2,
+      V_SUFFIX      VARCHAR2)
+   IS
+      --LDT
+      SELECT G.ACID,
+             G.foracid,
+             G.SOL_ID,
+             G.ACCT_CRNCY_CODE,
+             G.LIMIT_B2KID,
+             (CASE
+                 WHEN C.CORP_ID IS NOT NULL
+                 THEN
+                    'GIÁM ĐỐC ' || C.CUST_NAME
+                 WHEN C.CORP_ID IS NULL AND C.CUST_SEX = 'M'
+                 THEN
+                    'ÔNG ' || C.CUST_NAME
+                 ELSE
+                    'BÀ ' || C.CUST_NAME
+              END)
+                AS CUSTOMER_NAME,
+             C.CIF_ID,
+             C.CORP_ID AS CUST_ID,
+             G.SCHM_CODE
+        FROM TBAADM.LDT L, TBAADM.GAM G, TBAADM.CMG C
+       WHERE     C.CIF_ID = G.CIF_ID
+             AND G.ACID = L.ACID
+             AND C.BANK_ID = L.BANK_ID
+             AND C.BANK_ID = G.BANK_ID
+             AND G.BANK_ID = '01'
+             AND C.ENTITY_CRE_FLG = G.ENTITY_CRE_FLG
+             AND G.ENTITY_CRE_FLG = 'Y'
+             AND C.DEL_FLG = L.DEL_FLG
+             AND C.DEL_FLG = G.DEL_FLG
+             AND G.DEL_FLG = 'N'
+             AND G.ACCT_CLS_FLG = 'N'
+             AND C.CIF_ID = NVL (V_CIFID, C.CIF_ID)
+             AND G.FORACID = NVL (V_DISBID, G.FORACID)
+             AND G.SOL_ID = NVL (V_SOLID, G.SOL_ID)
+             AND L.DMD_EFF_DATE >= TO_DATE (LV_FR_DATE, 'DD-MM-YYYY')
+             AND L.DMD_EFF_DATE <= TO_DATE (LV_TO_DATE, 'DD-MM-YYYY')
+             AND G.LIMIT_B2KID IN
+                    (SELECT LIMIT_B2KID
+                       FROM TBAADM.LLT
+                      WHERE     ENTITY_CRE_FLG = 'Y'
+                            AND DEL_FLG = 'N'
+                            AND LIMIT_PREFIX = NVL (V_PREFIX, LIMIT_PREFIX)
+                            AND LIMIT_SUFFIX = NVL (V_SUFFIX, LIMIT_SUFFIX))
+      UNION
+      --LRS
+      SELECT G.ACID,
+             G.foracid,
+             G.SOL_ID,
+             G.ACCT_CRNCY_CODE,
+             G.LIMIT_B2KID,
+             (CASE
+                 WHEN C.CORP_ID IS NOT NULL
+                 THEN
+                    'GIÁM ĐỐC ' || C.CUST_NAME
+                 WHEN C.CORP_ID IS NULL AND C.CUST_SEX = 'M'
+                 THEN
+                    'ÔNG ' || C.CUST_NAME
+                 ELSE
+                    'BÀ ' || C.CUST_NAME
+              END)
+                AS CUSTOMER_NAME,
+             C.CIF_ID,
+             C.CORP_ID AS CUST_ID,
+             G.SCHM_CODE
+        FROM TBAADM.LRS LRS, TBAADM.GAM G, TBAADM.CMG C
+       WHERE     C.CIF_ID = G.CIF_ID
+             AND G.ACID = LRS.ACID
+             AND C.BANK_ID = LRS.BANK_ID
+             AND C.BANK_ID = G.BANK_ID
+             AND G.BANK_ID = '01'
+             AND G.ACCT_CLS_FLG = 'N'
+             AND C.ENTITY_CRE_FLG = G.ENTITY_CRE_FLG
+             AND G.ENTITY_CRE_FLG = 'Y'
+             AND C.DEL_FLG = LRS.DEL_FLG
+             AND C.DEL_FLG = G.DEL_FLG
+             AND G.DEL_FLG = 'N'
+             AND C.CIF_ID = NVL (V_CIFID, C.CIF_ID)
+             AND G.FORACID = NVL (V_DISBID, G.FORACID)
+             AND G.SOL_ID = NVL (V_SOLID, G.SOL_ID)
+             AND LRS.NEXT_DMD_DATE >= TO_DATE (LV_FR_DATE, 'DD-MM-YYYY')
+             AND LRS.NEXT_DMD_DATE <= TO_DATE (LV_TO_DATE, 'DD-MM-YYYY')
+             AND G.LIMIT_B2KID IN
+                    (SELECT LIMIT_B2KID
+                       FROM TBAADM.LLT
+                      WHERE     ENTITY_CRE_FLG = 'Y'
+                            AND DEL_FLG = 'N'
+                            AND LIMIT_PREFIX = NVL (V_PREFIX, LIMIT_PREFIX)
+                            AND LIMIT_SUFFIX = NVL (V_SUFFIX, LIMIT_SUFFIX))
+      ORDER BY ACCT_CRNCY_CODE;
+
+   ----------------------------------------------------------------------------
+   ---- Cursor 2  : Fetch all unpaid demands
+   ----------------------------------------------------------------------------
+   CURSOR RPT_LN_0103_Cursor (V_ACID        VARCHAR2,
+                              V_FORACID     VARCHAR2,
+                              V_SOL_ID      VARCHAR2,
+                              LV_FR_DATE    VARCHAR2,
+                              LV_TO_DATE    VARCHAR2)
+   IS
+      ---(1) LDT: Fetch Past and Current demands from Loan Demand Table[LDT]
+      SELECT ACID, DMD_EFF_DATE
+        FROM (SELECT ACID, DMD_EFF_DATE AS DMD_EFF_DATE
+                FROM TBAADM.LDT
+               WHERE     ACID = V_ACID
+                     AND bank_id = '01'
+                     AND DEL_FLG = 'N'
+                     AND DMD_AMT != TOT_ADJ_AMT
+              UNION
+              ---(2) FLS : Fetch future demands from LRS
+              SELECT LRS.ACID, NEXT_DMD_DATE AS DMD_EFF_DATE
+                FROM TBAADM.LRS
+               WHERE     LRS.ACID = V_ACID
+                     AND LRS.DEL_FLG = 'N'
+                     AND LRS.bank_id = '01'
+                     AND NEXT_DMD_DATE >= TO_DATE (LV_FR_DATE, 'DD-MM-YYYY')
+                     AND NEXT_DMD_DATE <= TO_DATE (LV_TO_DATE, 'DD-MM-YYYY')) A
+       WHERE 1 = 1
+             AND NOT EXISTS
+                    (SELECT 1
+                       FROM tbaadm.lam
+                      WHERE payoff_flg = 'Y' AND acid = A.ACID);
+
+   ------------------------------------------------
+   -- Declare the variable used in the Function
+   ------------------------------------------------
+   v_main_record              lop_21_main_cur%ROWTYPE := NULL;
+   v_record                   rpt_ln_0103_cursor%ROWTYPE := NULL;
+   lv_level                   VARCHAR2 (150) := NULL;
+   lv_set                     VARCHAR2 (150) := NULL;
+   lv_branch                  VARCHAR2 (150) := NULL;
+   lv_solid                   VARCHAR2 (150) := NULL;
+   lv_reportmonth             VARCHAR2 (150) := NULL;
+   lv_cifid                   VARCHAR2 (100) := NULL;
+   lv_type                    VARCHAR2 (100) := NULL;
+   lv_trantype                VARCHAR2 (100) := NULL;
+   lv_crelicon                VARCHAR2 (100) := NULL;
+   lv_disbid                  VARCHAR2 (100) := NULL;
+   lv_custid_text             VARCHAR2 (200) := NULL;
+   lv_loanamount              NUMBER := 0;
+   lv_principal_outstanding   NUMBER := 0;
+   lv_interest_outstanding    NUMBER := 0;
+   lv_total_outstanding       NUMBER := 0;
+   lv_loan_princ_diff         NUMBER := 0;
+   countldt                   NUMBER := 0;
+   lv_limit_prefix_suffix     VARCHAR2 (100) := NULL;
+   lv_address                 VARCHAR2 (100) := NULL;
+   lv_prefix                  VARCHAR2 (150) := NULL;
+   lv_suffix                  VARCHAR2 (150) := NULL;
+   lv_fr_date                 VARCHAR2 (150) := NULL;
+   lv_to_date                 VARCHAR2 (150) := NULL;
+   lv_branch_code             VARCHAR2 (150) := NULL;
+   lv_sol_desc                VARCHAR2 (150) := NULL;
+   lv_sol_addr1               VARCHAR2 (150) := NULL;
+   lv_sol_addr2               VARCHAR2 (150) := NULL;
+   lv_bank_identifier         VARCHAR2 (150) := NULL;
+   lv_dayrpt                  VARCHAR2 (10) := NULL;
+   lv_monrpt                  VARCHAR2 (10) := NULL;
+   lv_yearrpt                 VARCHAR2 (10) := NULL;
+   table_identifier           VARCHAR2 (150) := NULL;
+   lv_flg                     VARCHAR2 (10) := 'Y';
+   lv_cif_id                  tbaadm.gam.cif_id%TYPE := NULL;
+   lv_acid                    tbaadm.gam.acid%TYPE := NULL;
+   lv_foracid                 tbaadm.gam.foracid%TYPE := NULL;
+   lv_sol_id                  tbaadm.gam.sol_id%TYPE := NULL;
+   lv_limit_b2kid             tbaadm.gam.limit_b2kid%TYPE := NULL;
+   lv_cust_id                 tbaadm.cmg.corp_id%TYPE := NULL;
+   LV_CLR_BAL_AMT             NUMBER := 0;
+   LV_LR_FREQ_TYPE            VARCHAR2 (10) := '';
+BEGIN
+   --{
+   LV_SOLID := P_SOLID;
+
+   IF P_CIFID IS NULL
+   THEN
+      LV_CIFID := '';
+   ELSE
+      LV_CIFID := P_CIFID;
+   END IF;
+
+   IF ( (P_TYPE IS NULL) OR (P_TYPE = 'All'))
+   THEN
+      LV_TYPE := 'ALL';
+   ELSE
+      LV_TYPE := P_TYPE;
+   END IF;
+
+   IF (P_DISBID IS NULL)
+   THEN
+      LV_DISBID := '';
+   ELSE
+      LV_DISBID := P_DISBID;
+   END IF;
+
+   IF (P_CRELICON IS NOT NULL)
+   THEN
+      BEGIN
+         SELECT REGEXP_SUBSTR (P_CRELICON,
+                               '[^,/]+',
+                               1,
+                               1),
+                REGEXP_SUBSTR (P_CRELICON,
+                               '[^,/]+',
+                               1,
+                               2)
+           INTO LV_PREFIX, LV_SUFFIX
+           FROM DUAL;
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_PREFIX := '';
+            LV_SUFFIX := '';
+      END;
+   ELSE
+      LV_PREFIX := '';
+      LV_SUFFIX := '';
+   END IF;
+
+   IF (P_REPORTMONTH IS NULL)
+   THEN
+      --{
+      BEGIN
+         SELECT TO_CHAR (SYSDATE, 'DD-MM-YYYY') INTO LV_REPORTMONTH FROM DUAL;
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_REPORTMONTH := '';
+      END;
+   -- }
+   ELSE
+      --{
+      LV_REPORTMONTH := P_REPORTMONTH;
+   --}
+   END IF;
+
+   IF (P_TYPE != 'All')
+   THEN
+      -- {
+      BEGIN
+         SELECT TO_CHAR (
+                   (LAST_DAY (
+                       ADD_MONTHS (TO_DATE (LV_REPORTMONTH, 'DD-MM-YYYY'),
+                                   -1))
+                    + 1),
+                   'DD-MM-YYYY')
+           INTO LV_FR_DATE
+           FROM DUAL;
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_FR_DATE := '';
+      END;
+
+      BEGIN
+         SELECT TO_CHAR (LAST_DAY (TO_DATE (LV_REPORTMONTH, 'DD-MM-YYYY')),
+                         'DD-MM-YYYY')
+           INTO LV_TO_DATE
+           FROM DUAL;
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_TO_DATE := '';
+      END;
+   --}
+   END IF;
+
+   IF (P_TYPE = 'All')
+   THEN
+      -- {
+      LV_FR_DATE := LV_REPORTMONTH;
+      LV_TO_DATE := LV_REPORTMONTH;
+   --}
+   END IF;
+
+   DBMS_OUTPUT.PUT_LINE ('REPORT_TYPE : ' || P_TYPE);
+   DBMS_OUTPUT.PUT_LINE ('LV_FR_DATE : ' || LV_FR_DATE);
+   DBMS_OUTPUT.PUT_LINE ('LV_TO_DATE : ' || LV_TO_DATE);
+
+   --   DBMS_OUTPUT.
+   --    PUT_LINE ('-------------------------------------------------------');
+
+   --------------------------------------------------
+   -- Cursor 1: Fetch Eligible records
+   --------------------------------------------------
+   FOR v_main_record IN LOP_21_MAIN_CUR (LV_SOLID,
+                                         LV_CIFID,
+                                         LV_FR_DATE,
+                                         LV_TO_DATE,
+                                         LV_TYPE,
+                                         LV_CRELICON,
+                                         LV_DISBID,
+                                         LV_PREFIX,
+                                         LV_SUFFIX)
+   LOOP
+      --{
+
+      DBMS_OUTPUT.PUT_LINE ('Main Cursor  ');
+      DBMS_OUTPUT.PUT_LINE ('Acid : ' || v_main_record.acid);
+      DBMS_OUTPUT.PUT_LINE ('CCY : ' || v_main_record.ACCT_CRNCY_CODE);
+
+      -- Assigning values
+      lv_cif_id := v_main_record.cif_id;
+      lv_acid := v_main_record.acid;
+      lv_foracid := v_main_record.foracid;
+      lv_sol_id := v_main_record.sol_id;
+      lv_limit_b2kid := v_main_record.limit_b2kid;
+      lv_CUST_ID := v_main_record.cust_id;
+      lv_flg := 'Y';
+
+      ---------------------------------------
+      -- Address
+      ---------------------------------------
+      BEGIN
+         SELECT (ADDRESS_LINE1 || ADDRESS_LINE2 || ADDRESS_LINE3)
+           INTO LV_address
+           FROM CRMUSER.ADDRESS
+          WHERE     orgkey = LV_CIF_ID
+                AND bank_id = '01'
+                AND PREFERREDADDRESS = 'Y';
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_address := '';
+      END;
+
+
+      ---------------------------------------
+      -- Branch Details
+      ---------------------------------------
+      BEGIN
+         SELECT BR_CODE,
+                SOL_DESC,
+                ADDR_1,
+                ADDR_2
+           INTO LV_branch_code,
+                LV_sol_desc,
+                LV_sol_addr1,
+                LV_sol_addr2
+           FROM TBAADM.SOL
+          WHERE BANK_ID = '01' AND SOL_ID = LV_sol_id;
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_branch_code := '';
+            LV_sol_desc := '';
+            LV_sol_addr1 := '';
+            LV_sol_addr2 := '';
+      END;
+
+      ---------------------------------------
+      -- Bank Identifier
+      ---------------------------------------
+      BEGIN
+         SELECT R.BANK_IDENTIFIER
+           INTO LV_BANK_IDENTIFIER
+           FROM TBAADM.SOL S, TBAADM.BCT B, TBAADM.BRBIC R
+          WHERE     S.BANK_ID = '01'
+                AND S.BANK_ID = B.BANK_ID
+                AND SOL_ID = LV_sol_id
+                AND S.BR_CODE = B.BR_CODE
+                AND S.BANK_CODE = B.BANK_CODE
+                AND S.BR_CODE = R.BRANCH_CODE
+                AND S.BANK_CODE = R.BANK_CODE;
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_BANK_IDENTIFIER := '';
+      END;
+
+
+      ---------------------------------------
+      -- Get limit Id
+      ---------------------------------------
+      BEGIN
+         SELECT (LIMIT_PREFIX || '/' || LIMIT_SUFFIX)
+           INTO LV_limit_prefix_suffix
+           FROM TBAADM.LLT
+          WHERE     LIMIT_B2KID = LV_LIMIT_B2KID
+                AND bank_id = '01'
+                AND ENTITY_CRE_FLG = 'Y'
+                AND DEL_FLG = 'N';
+      EXCEPTION
+         WHEN NO_DATA_FOUND
+         THEN
+            LV_limit_prefix_suffix := '';
+      END;
+
+      -------------------------------------
+      -- Fetch Day, Month and Year
+      -------------------------------------
+      BEGIN
+         SELECT TO_CHAR (SYSDATE, 'DD'),
+                TO_CHAR (SYSDATE, 'MM'),
+                TO_CHAR (SYSDATE, 'YYYY')
+           INTO LV_DAYRPT, LV_MONRPT, LV_YEARRPT
+           FROM DUAL;
+      END;
+
+      -------------------------------------
+      -- Derive static text
+      -------------------------------------
+      IF ( (lv_CUST_ID IS NULL) OR (lv_CUST_ID = ''))
+      THEN
+         lv_custid_text := 'Quý khách hàng';
+      ELSE
+         lv_custid_text := 'Quý công ty';
+      END IF;
+
+
+
+      --------------------------------------------------
+      -- Cursor 2: Fetch unpaid demands
+      --------------------------------------------------
+      FOR v_record IN RPT_LN_0103_Cursor (LV_acid,
+                                          LV_foracid,
+                                          LV_sol_id,
+                                          LV_FR_DATE,
+                                          LV_TO_DATE)
+      LOOP
+         --{
+         DBMS_OUTPUT.PUT_LINE ('Child Cursor  ');
+         DBMS_OUTPUT.PUT_LINE ('Acid : ' || v_record.acid);
+         DBMS_OUTPUT.PUT_LINE ('DMD_DATE : ' || v_record.dmd_eff_date);
+
+         ---------------------------------------
+         -- Get Loan Amount
+         ---------------------------------------
+         BEGIN
+            SELECT CUSTOM.loanOutAmt (v_record.acid, '01')
+              INTO LV_LoanAmount
+              FROM DUAL;
+         EXCEPTION
+            WHEN NO_DATA_FOUND
+            THEN
+               LV_LoanAmount := 0;
+         END;
+
+
+         -----------------------------------------------------------------------------
+         -- Check count in LDT to find if demand is from LDT or FLS Table
+         -----------------------------------------------------------------------------
+         BEGIN
+            --{
+            SELECT COUNT (1)
+              INTO countLDT
+              FROM TBAADM.LDT L
+             WHERE     1 = 1
+                   AND L.BANK_ID = '01'
+                   AND L.DEL_FLG = 'N'
+                   AND ACID = v_record.acid
+                   AND L.DMD_EFF_DATE = v_record.dmd_eff_date;
+         EXCEPTION
+            WHEN NO_DATA_FOUND
+            THEN
+               countLDT := 0;
+         --}
+         END;
+
+         IF (countLDT > 0)
+         THEN
+            -- Past and Current Demands
+            Table_Identifier := 'LDT';
+         ELSE
+            -- Future Demands
+            Table_Identifier := 'FPT_LOAN_SCHD';
+         END IF;
+
+
+         -------------------------------------------------------------------------------------
+         --  LDT Fetch : BEGIN
+         -------------------------------------------------------------------------------------
+         -- Fetch Past and current demands  from LDT Table
+         -------------------------------------------------------------------------------------
+         IF (Table_Identifier = 'LDT')
+         THEN
+            --{
+            --            DBMS_OUTPUT.
+            --             PUT_LINE (
+            --               'LDT  : ' || LV_FORACID || ' - ' || V_RECORD.DMD_EFF_DATE);
+
+            ----------------------------------------------------------------
+            -- Get Interest outstanding from LDT
+            ----------------------------------------------------------------
+            BEGIN
+               SELECT NVL (SUM (DMD_AMT - TOT_ADJ_AMT), 0)
+                 INTO LV_Interest_outstanding
+                 FROM TBAADM.LDT
+                WHERE DEL_FLG = 'N'
+                      AND DMD_FLOW_ID IN
+                             (SELECT FLOW_ID
+                                FROM tbaadm.lfm
+                               WHERE FLOW_NATURE = 'D'
+                                     AND (DMD_TYPE = 'I' OR FLOW_ID = 'BCDEM')
+                                     AND DEL_FLG = 'N'
+                                     AND BANK_ID = '01')
+                      AND BANK_ID = '01'
+                      AND DMD_AMT != TOT_ADJ_AMT
+                      AND ACID = v_record.acid
+                      AND DMD_EFF_DATE = v_record.dmd_eff_date;
+            EXCEPTION
+               WHEN NO_DATA_FOUND
+               THEN
+                  LV_Interest_outstanding := 0;
+            END;
+
+            ----------------------------------------------------------------
+            -- Get Principal outstanding from LDT
+            ----------------------------------------------------------------
+            BEGIN
+               SELECT NVL (SUM (DMD_AMT - TOT_ADJ_AMT), 0)
+                 INTO LV_principal_outstanding
+                 FROM TBAADM.LDT
+                WHERE DEL_FLG = 'N'
+                      AND DMD_FLOW_ID IN
+                             (SELECT FLOW_ID
+                                FROM tbaadm.lfm
+                               WHERE     FLOW_NATURE = 'D'
+                                     AND DMD_TYPE = 'P'
+                                     AND DEL_FLG = 'N'
+                                     AND BANK_ID = '01')
+                      AND BANK_ID = '01'
+                      AND DMD_AMT != TOT_ADJ_AMT
+                      AND ACID = v_record.acid
+                      AND DMD_EFF_DATE = v_record.dmd_eff_date;
+            EXCEPTION
+               WHEN NO_DATA_FOUND
+               THEN
+                  LV_principal_outstanding := 0;
+            END;
+         --}
+         END IF;
+
+         ------------------------------------------------------------------------------------
+         -- LDT Fetch : END
+         ------------------------------------------------------------------------------------
+
+
+         ------------------------------------------------------------------------------------
+         -- FPT_LOAN_SCHD Fetch :  BEGIN
+         ------------------------------------------------------------------------------------
+         -- Fetch future demands from custom table FLS
+         ------------------------------------------------------------------------------------
+         IF (Table_Identifier = 'FPT_LOAN_SCHD')
+         THEN
+            --{
+
+            --            DBMS_OUTPUT.
+            --             PUT_LINE (
+            --                  'FPT_LOAN_SCHD  : '
+            --               || LV_FORACID
+            --               || ' - '
+            --               || V_RECORD.DMD_EFF_DATE);
+            -------------------------------------------------------------------------------------
+            -- Get frequency from LRS
+            -------------------------------------------------------------------------------------
+            BEGIN
+               SELECT LR_FREQ_TYPE
+                 INTO LV_LR_FREQ_TYPE
+                 FROM TBAADM.LRS
+                WHERE DEL_FLG = 'N'
+                      AND FLOW_ID IN
+                             (SELECT FLOW_ID
+                                FROM tbaadm.lfm
+                               WHERE     FLOW_NATURE = 'D'
+                                     AND DMD_TYPE = 'P'
+                                     AND DEL_FLG = 'N'
+                                     AND BANK_ID = '01')
+                      AND BANK_ID = '01'
+                      AND ACID = v_record.acid
+                      AND NEXT_DMD_DATE = v_record.DMD_EFF_DATE;
+
+               --Clr bal amt
+               SELECT ABS (CLR_BAL_AMT)
+                 INTO LV_CLR_BAL_AMT
+                 FROM tbaadm.gam
+                WHERE acid = v_record.acid;
+            EXCEPTION
+               WHEN OTHERS
+               THEN
+                  LV_LR_FREQ_TYPE := '';
+                  LV_CLR_BAL_AMT := 0;
+                  DBMS_OUTPUT.PUT_LINE ('No record in TBAADM.LRS ');
+            END;
+
+
+            -------------------------------------------------------------------------------------
+            --Principal outstanding from LRS
+            -------------------------------------------------------------------------------------
+            BEGIN
+               SELECT NVL (SUM (FLOW_AMT), 0)
+                 INTO LV_principal_outstanding
+                 FROM TBAADM.LRS
+                WHERE DEL_FLG = 'N'
+                      AND FLOW_ID IN
+                             (SELECT FLOW_ID
+                                FROM tbaadm.lfm
+                               WHERE     FLOW_NATURE = 'D'
+                                     AND DMD_TYPE = 'P'
+                                     AND DEL_FLG = 'N'
+                                     AND BANK_ID = '01')
+                      AND BANK_ID = '01'
+                      AND ACID = v_record.acid
+                      AND NEXT_DMD_DATE = v_record.DMD_EFF_DATE;
+            EXCEPTION
+               WHEN OTHERS
+               THEN
+                  LV_principal_outstanding := LV_principal_outstanding;
+                  DBMS_OUTPUT.PUT_LINE ('No record in TBAADM.LRS ');
+            END;
+
+
+            --Over write Principal And Interest outstanding from FPT_LOAN_SCHD, if record exists
+            BEGIN
+               --{
+               SELECT PRINCIPAL_AMT, INTEREST_AMT
+                 INTO LV_principal_outstanding, LV_Interest_outstanding
+                 FROM CUSTOM.FPT_LOAN_SCHD
+                WHERE     acid = v_record.acid
+                      AND value_date = v_record.DMD_EFF_DATE
+                      AND ROWNUM = 1;
+            EXCEPTION
+               WHEN OTHERS
+               THEN
+                  LV_principal_outstanding := LV_principal_outstanding;
+                  LV_Interest_outstanding := 0;
+                  DBMS_OUTPUT.PUT_LINE ('No record in CUSTOM.FPT_LOAN_SCHD ');
+            --}
+            END;
+
+
+
+            ---Over write Interest outstanding from CUSTOM.C_LOP21_HPAYOFF, if record exists
+            BEGIN
+                 --{
+                 SELECT INTEREST_AMT
+                   INTO LV_Interest_outstanding
+                   FROM CUSTOM.C_LOP21_HPAYOFF
+                  WHERE     acid = v_record.acid
+                        AND DMD_DATE = v_record.DMD_EFF_DATE                        
+                        AND TRIM (ERR_MSG) IS NULL 
+                        AND ROWNUM = 1
+               ORDER BY RCRE_TIME DESC;
+            EXCEPTION 
+               WHEN OTHERS
+               THEN
+                  LV_Interest_outstanding := LV_Interest_outstanding;
+                  DBMS_OUTPUT.
+                   PUT_LINE ('No record in CUSTOM.C_LOP21_HPAYOFF ');  
+            --}
+            END;
+
+
+            --  If Frequency type is bullet then take outstanding balance from GAM
+            IF (LV_LR_FREQ_TYPE = 'B')
+            THEN
+               --{
+               LV_principal_outstanding := LV_CLR_BAL_AMT;
+            --}
+            END IF;
+         --}
+         END IF;
+
+
+         ------------------------------------------------------------------------------------
+         -- FPT_LOAN_SCHD Fetch :  END
+         ------------------------------------------------------------------------------------
+
+         -------------------------------------
+         -- Fetch Total Outstanding
+         -------------------------------------
+         LV_total_outstanding :=
+            LV_principal_outstanding + LV_Interest_outstanding;
+
+         LV_Loan_Princ_diff := LV_LoanAmount - LV_principal_outstanding;
+
+         --         DBMS_OUTPUT.
+         --          PUT_LINE (
+         --            'LV_principal_outstanding  : ' || LV_principal_outstanding);
+         --         DBMS_OUTPUT.
+         --          PUT_LINE ('LV_Interest_outstanding : ' || LV_Interest_outstanding);
+
+         IF ( (LV_principal_outstanding = 0)
+             AND (LV_Interest_outstanding = 0))
+         THEN
+            --{
+            LV_FLG := 'N';
+         --}
+         ELSE
+            --{
+            LV_FLG := 'Y';
+         --}
+         END IF;
+
+         ----------------------------------------------------------------------------------------------------------------
+         ---- output the records
+         ----------------------------------------------------------------------------------------------------------------
+         --DBMS_OUTPUT.PUT_LINE ('LV_FLG :' || LV_FLG);
+
+         IF (LV_FLG = 'Y')
+         THEN
+            --{
+            PIPE ROW (custom.
+                       RPT_LN_0103_TYPE (
+                         LV_foracid,
+                         TO_CHAR (v_record.dmd_eff_date, 'DD-MM-RRRR'),
+                         v_main_record.acct_crncy_code,
+                         lv_loanamount,                                   --04
+                         lv_principal_outstanding,                        --05
+                         lv_interest_outstanding,                         --06
+                         lv_limit_prefix_suffix,
+                         v_main_record.customer_name,
+                         lv_address,
+                         lv_total_outstanding,
+                         lv_loan_princ_diff,
+                         lv_reportmonth,
+                         lv_sol_desc,
+                         lv_sol_addr1,
+                         lv_sol_addr2,
+                         '',
+                         V_record.acid,                                 --acid
+                         lv_bank_identifier,
+                         lv_dayrpt,
+                         lv_monrpt,
+                         lv_yearrpt,
+                         lv_custid_text));
+         --}
+         END IF;
+      -------End of function
+
+      --}
+      END LOOP;
+   --}
+   END LOOP;
+--}
+END;
+/
